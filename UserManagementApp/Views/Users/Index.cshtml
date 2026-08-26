@@ -1,0 +1,160 @@
+﻿@model List<UserManagementApp.Data.ApplicationUser>
+@{
+    ViewData["Title"] = "User Management";
+}
+
+<h2 class="mb-3">User Management</h2>
+
+@* Toolbar: buttons are always visible, only enabled/disabled based on selection.
+   Task requirement: buttons must NOT appear/disappear, only enable/disable. *@
+<div class="btn-toolbar mb-3 gap-2" role="toolbar">
+    <button type="submit" form="blockForm" class="btn btn-outline-warning" id="blockBtn" disabled
+            data-bs-toggle="tooltip" data-bs-placement="top" title="Block the selected users">
+        <i class="bi bi-slash-circle"></i> Block
+    </button>
+    <button type="submit" form="unblockForm" class="btn btn-outline-secondary" id="unblockBtn" disabled
+            data-bs-toggle="tooltip" data-bs-placement="top" title="Unblock the selected users">
+        <i class="bi bi-unlock"></i>
+    </button>
+    <button type="submit" form="deleteForm" class="btn btn-outline-danger" id="deleteBtn" disabled
+            data-bs-toggle="tooltip" data-bs-placement="top" title="Delete the selected users">
+        <i class="bi bi-trash"></i>
+    </button>
+    <button type="submit" form="deleteUnverifiedForm" class="btn btn-outline-danger"
+            data-bs-toggle="tooltip" data-bs-placement="top" title="Delete every account that has not verified their email yet">
+        <i class="bi bi-person-x"></i>
+    </button>
+</div>
+
+@* These hidden forms actually submit the requests. JavaScript below fills in
+   the "ids" hidden inputs based on which checkboxes the user has checked. *@
+<form id="blockForm" method="post" asp-action="Block"></form>
+<form id="unblockForm" method="post" asp-action="Unblock"></form>
+<form id="deleteForm" method="post" asp-action="Delete"></form>
+<form id="deleteUnverifiedForm" method="post" asp-action="DeleteUnverified"></form>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th style="width: 40px;">
+                    <input type="checkbox" id="selectAll" class="form-check-input"
+                           data-bs-toggle="tooltip" title="Select or deselect all users" />
+                </th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Last Login</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var u in Model)
+            {
+                <tr>
+                    <td>
+                        <input type="checkbox" class="form-check-input rowCheck" value="@u.Id" />
+                    </td>
+                    <td>@u.FullName</td>
+                    <td>@u.Email</td>
+                    <td>
+                        @(u.LastLoginTime.HasValue ? u.LastLoginTime.Value.ToLocalTime().ToString("g") : "Never")
+                    </td>
+                    <td>
+                        @{
+                            var badgeClass = u.Status switch
+                            {
+                                UserManagementApp.Data.UserStatus.Active => "bg-success",
+                                UserManagementApp.Data.UserStatus.Blocked => "bg-danger",
+                                _ => "bg-secondary"
+                            };
+                        }
+                        <span class="badge @badgeClass">@u.Status</span>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@* Toast container for success/error messages.
+   We use Bootstrap toasts instead of browser alert() as required by the task. *@
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    @if (TempData["StatusMessage"] != null)
+    {
+        <div class="toast align-items-center text-bg-success border-0" role="alert" id="successToast">
+            <div class="d-flex">
+                <div class="toast-body">@TempData["StatusMessage"]</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="toast align-items-center text-bg-danger border-0" role="alert" id="errorToast">
+            <div class="d-flex">
+                <div class="toast-body">@TempData["ErrorMessage"]</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        // Enable Bootstrap tooltips - by default Bootstrap requires this manual init step
+        var tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltipTriggerList.forEach(function(el) {
+            new bootstrap.Tooltip(el);
+        });
+
+        // Show toasts automatically if they exist on the page
+        var successToastEl = document.getElementById('successToast');
+        if (successToastEl) {
+            new bootstrap.Toast(successToastEl).show();
+        }
+        var errorToastEl = document.getElementById('errorToast');
+        if (errorToastEl) {
+            new bootstrap.Toast(errorToastEl).show();
+        }
+
+        // This script keeps the toolbar buttons in sync with checkbox selection,
+        // and injects the selected user IDs into the hidden forms before submitting.
+        const selectAll = document.getElementById('selectAll');
+        const rowChecks = document.querySelectorAll('.rowCheck');
+        const blockBtn = document.getElementById('blockBtn');
+        const unblockBtn = document.getElementById('unblockBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const targetForms = ['blockForm', 'unblockForm', 'deleteForm'];
+
+        function syncHiddenInputs() {
+            const selectedIds = [...rowChecks].filter(c => c.checked).map(c => c.value);
+
+            targetForms.forEach(formId => {
+                const form = document.getElementById(formId);
+                form.querySelectorAll('input[name="ids"]').forEach(el => el.remove());
+                selectedIds.forEach(id => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'ids';
+                    input.value = id;
+                    form.appendChild(input);
+                });
+            });
+        }
+
+        function updateToolbar() {
+            const anyChecked = [...rowChecks].some(c => c.checked);
+            blockBtn.disabled = !anyChecked;
+            unblockBtn.disabled = !anyChecked;
+            deleteBtn.disabled = !anyChecked;
+            syncHiddenInputs();
+        }
+
+        selectAll.addEventListener('change', () => {
+            rowChecks.forEach(c => c.checked = selectAll.checked);
+            updateToolbar();
+        });
+
+        rowChecks.forEach(c => c.addEventListener('change', updateToolbar));
+    </script>
+}

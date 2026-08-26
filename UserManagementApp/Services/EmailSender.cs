@@ -5,9 +5,6 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 namespace UserManagementApp.Services
 {
     // This class sends real emails through Gmail's SMTP server.
-    // Task requirement: email sending must be asynchronous (non-blocking I/O).
-    // NOTE: we intentionally await the send directly here instead of using
- 
     public class EmailSender : IEmailSender
     {
         private readonly IConfiguration _config;
@@ -28,7 +25,11 @@ namespace UserManagementApp.Services
                     Credentials = new NetworkCredential(
                         _config["Gmail:User"],
                         _config["Gmail:AppPassword"]),
-                    EnableSsl = true
+                    EnableSsl = true,
+                    // IMPORTANT: cap how long we wait for the SMTP server to respond.
+                    // Without this, a slow/unresponsive connection could hang the
+                    // entire HTTP request (and the user's browser) indefinitely.
+                    Timeout = 15000 // 15 seconds, in milliseconds
                 };
 
                 var mail = new MailMessage(
@@ -45,6 +46,9 @@ namespace UserManagementApp.Services
             }
             catch (Exception ex)
             {
+                // If sending fails or times out, we log it but do NOT let it
+                // crash or hang the registration flow. The user should still
+                // get redirected and signed in even if the email had trouble.
                 _logger.LogError(ex, "Failed to send email to {Email}", email);
             }
         }

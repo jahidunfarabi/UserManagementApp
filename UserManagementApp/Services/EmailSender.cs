@@ -1,14 +1,20 @@
-﻿using System.Net;
-using System.Net.Mail;
+﻿using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace UserManagementApp.Services
 {
-    // This class sends real emails through Gmail's SMTP server.
+    // This class sends real emails through Brevo's HTTP API instead of SMTP.
+    // NOTE: we switched from SMTP to an HTTP API because some cloud hosts
+    // (like Render's free tier) block or heavily restrict outbound SMTP
+    // ports (like 587), which caused emails to silently hang or fail.
+    // HTTPS (port 443), which this API uses, is virtually never blocked.
     public class EmailSender : IEmailSender
     {
         private readonly IConfiguration _config;
         private readonly ILogger<EmailSender> _logger;
+        private static readonly HttpClient _httpClient = new HttpClient();
 
         public EmailSender(IConfiguration config, ILogger<EmailSender> logger)
         {
@@ -20,35 +26,40 @@ namespace UserManagementApp.Services
         {
             try
             {
-                using var client = new SmtpClient("smtp.gmail.com", 587)
+                var apiKey = _config["Brevo:ApiKey"];
+                var senderEmail = _config["Brevo:SenderEmail"];
+
+                var payload = new
                 {
-                    Credentials = new NetworkCredential(
-                        _config["Gmail:User"],
-                        _config["Gmail:AppPassword"]),
-                    EnableSsl = true,
-                    // IMPORTANT: cap how long we wait for the SMTP server to respond.
-                    // Without this, a slow/unresponsive connection could hang the
-                    // entire HTTP request (and the user's browser) indefinitely.
-                    Timeout = 15000 // 15 seconds, in milliseconds
+                    sender = new { email = senderEmail, name = "UserManagementApp" },
+                    to = new[] { new { email = email } },
+                    subject = subject,
+                    htmlContent = htmlMessage
                 };
 
-                var mail = new MailMessage(
-                    _config["Gmail:User"]!,
-                    email,
-                    subject,
-                    htmlMessage)
+                var json = JsonSerializer.Serialize(payload);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email")
                 {
-                    IsBodyHtml = true
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
                 };
+                request.Headers.Add("api-key", apiKey);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                await client.SendMailAsync(mail);
-                _logger.LogInformation("Email sent successfully to {Email}", email);
+                var response = await _httpClient.SendAsync(request);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Email sent successfully to {Email}", email);
+                }
+                else
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to send email to {Email}. Status: {Status}. Body: {Body}",
+                        email, response.StatusCode, errorBody);
+                }
             }
             catch (Exception ex)
             {
-                // If sending fails or times out, we log it but do NOT let it
-                // crash or hang the registration flow. The user should still
-                // get redirected and signed in even if the email had trouble.
                 _logger.LogError(ex, "Failed to send email to {Email}", email);
             }
         }

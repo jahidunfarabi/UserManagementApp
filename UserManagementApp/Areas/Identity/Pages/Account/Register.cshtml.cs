@@ -131,7 +131,7 @@ public class RegisterModel : PageModel
                 }
 
                 // Identity's own duplicate-email check usually catches this first
-                // and adds an error here (application-level check)
+              
                 foreach (var error in result.Errors)
                 {
                     ModelState.AddModelError(string.Empty, error.Description);
@@ -139,19 +139,17 @@ public class RegisterModel : PageModel
             }
             catch (DbUpdateException ex) when (IsDuplicateEmailError(ex))
             {
-                // IMPORTANT: this is the database-level safety net.
-                // Even if two people somehow try to register with the same email
-                // at the exact same moment, the database's UNIQUE INDEX will
-                // reject one of them, and we catch that error here.
+        
+             
                 ModelState.AddModelError(string.Empty, "This email is already registered. Please use a different email or log in.");
             }
         }
 
-        // If we got this far, something failed, redisplay form
+   
         return Page();
     }
 
-    // Helper method to check if the database error was caused by our unique email index
+
     private static bool IsDuplicateEmailError(DbUpdateException ex)
     {
         var message = ex.InnerException?.Message ?? ex.Message;

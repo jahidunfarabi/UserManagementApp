@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using UserManagementApp.Data;
@@ -14,6 +15,15 @@ if (string.IsNullOrWhiteSpace(connectionString))
 // Using PostgreSQL now instead of SQL Server
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
+
+// IMPORTANT: persist Data Protection keys in the database instead of local disk.
+// On Render's free tier, the container's local filesystem is wiped on every
+// restart/redeploy, which would generate a brand new encryption key each time.
+// That breaks anything relying on the old key - like antiforgery tokens on
+// forms that were already loaded in the browser before the restart happened.
+// Storing keys in the database means they survive restarts.
+builder.Services.AddDataProtection()
+    .PersistKeysToDbContext<ApplicationDbContext>();
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
